@@ -9,6 +9,7 @@ permissions:
   contents: read
   actions: read
   security-events: write
+  pull-requests: write    
   
 jobs:
 
@@ -21,7 +22,7 @@ jobs:
   # ── Stage 2: SAST — runs in parallel after gitleaks passes ──────────────────
   bandit:
     name: "[2] Bandit"
-    needs: gitleaks
+    #needs: gitleaks
     uses: monishms50/devsecops-hub/.github/workflows/bandit.yml@main
     with:
       scan_path: "."
@@ -31,7 +32,7 @@ jobs:
 
   semgrep:
     name: "[2] Semgrep"
-    needs: gitleaks
+    #needs: gitleaks
     uses: monishms50/devsecops-hub/.github/workflows/semgrep.yml@main
     with:
       config: "p/python p/owasp-top-ten"
@@ -41,7 +42,7 @@ jobs:
   # ── Stage 3: SCA ─────────────────────────────────────────────────────────────
   sca:
     name: "[3] SCA"
-    needs: [bandit, semgrep]
+    #needs: [bandit, semgrep]
     uses: monishms50/devsecops-hub/.github/workflows/sca.yml@main
     with:
       requirements_file: "requirements.txt"
