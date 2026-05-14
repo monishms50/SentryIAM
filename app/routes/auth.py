@@ -9,7 +9,7 @@ from app.models.refresh_token import RefreshToken
 from app.models.audit_log import AuditLog
 from app.utils.jwt import create_access_token, create_refresh_token
 from app.utils.tokens import issue_token_pair
-from app.utils.token import log_event
+from app.utils.audit import log_event
 from datetime import datetime, timedelta, timezone
 from app.config import settings
 from app.dependencies.auth import get_current_user
@@ -28,8 +28,8 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
     existing_user = db.query(User).filter(User.email == body.email).first()
     if existing_user:
         # Log fsilure
-        event_type="REGISTER_FAILED",       
-        log_event(db, event_type, success= False, user_id = None, request: Request)
+        event_type="REGISTER_FAILED"       
+        log_event(db, event_type, success= False, user_id = None, request= request)
         raise HTTPException(status_code=409, detail="Email already exists")
 
     # Hash the password
@@ -48,26 +48,19 @@ def register(request: Request, body: RegisterRequest, db: Session = Depends(get_
     db.refresh(new_user)
 
     # Log success
-    db.add(AuditLog(
-        user_id=new_user.id,
-        event_type="REGISTER_SUCCESS",
-        ip_address=ip,
-        user_agent=user_agent,
-        success=True
-    ))
-    db.commit()
-
+    log_event(db, "REGISTER_SUCCESS", success=True, user_id=new_user.id, request=request)
     return {"message": "User registered successfully", "user_id": str(new_user.id)}
     
 
 @router.post("/auth/login", status_code=200)
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginRequest, db: Session = Depends(get_db)):
 
     # Fetch user by email from database
     existing_user = db.query(User).filter(User.email == body.email).first()
 
     # Reject login if user does not exist
     if not existing_user:
+        log_event(db, "LOGIN_FAILED", success=False, user_id=None, request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Verify password using bcrypt hash comparison
@@ -78,9 +71,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
     # Reject login if password is incorrect
     if not password_match:
+        log_event(db, "LOGIN_FAILED", success=False, user_id=existing_user.id, request=request)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # Return token pair to client
+    log_event(db, "LOGIN_SUCCESS", success=True, user_id=existing_user.id, request=request)
     return issue_token_pair(existing_user.id, db)
 
 
@@ -99,16 +94,11 @@ def refresh( request: Request, body : RefreshRequest, db: Session = Depends(get_
 
     # Reuse detection: The user can have multiple devices or sessions. So then could be many tokens for the same user. If one of the token was token was already revoked and an attempt was made with this token, then we know this could be suspecious activity, so we revoke all token for this user. 
     if token_entry.revoked:
-        ip = request.client.host
-        user_agent = request.headers.get("user-agent")
-
         # Revoke ALL tokens for this user
         db.query(RefreshToken).filter(RefreshToken.user_id == token_entry.user_id).update({"revoked": True})
         
         # Log Token abuse detection
-        user_id=token_entry.user_id,
-        event_type="TOKEN_REUSE_DETECTED",
-        log_event(db, event_type, success= False, user_id, request: Request)
+        log_event(db, event_type="TOKEN_REUSE_DETECTED", success= False, user_id=token_entry.user_id, request= request)
         raise HTTPException(status_code=401, detail="Token reuse detected. Please login again.")
 
     # Token expired
@@ -120,7 +110,8 @@ def refresh( request: Request, body : RefreshRequest, db: Session = Depends(get_
     token_entry.revoked = True
     db.commit()
 
-    # Return new token pair
+    # Return new token pairi
+    log_event(db, "TOKEN_REFRESHED", success=True, user_id=user_id, request=request)
     return issue_token_pair(user_id, db)
 
 

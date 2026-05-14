@@ -1,4 +1,4 @@
-def log_event(db: Session, event_type: str, success: bool, user_id=None, request: Request = None):
+def log_event(db, event_type: str, success: bool, user_id=None, request = None):
     try:
         ip = request.client.host if request else None
         user_agent = request.headers.get("user-agent") if request else None
